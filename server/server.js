@@ -1,7 +1,9 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
 require("dotenv").config();
 
 const User = require("./models/User");
@@ -104,6 +106,68 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (error) {
     console.error("Login failed:", error);
     return res.status(500).json({ message: "Unable to sign in right now" });
+  }
+});
+
+app.post("/api/auth/google", async (req, res) => {
+  const { credential } = req.body || {};
+  if (typeof credential !== "string" || credential.length > 8192) {
+    return res.status(400).json({ message: "A valid Google credential is required" });
+  }
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(503).json({ message: "Google sign-in is not configured" });
+  }
+
+  let profile;
+  try {
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    profile = ticket.getPayload();
+  } catch {
+    return res.status(401).json({ message: "Google sign-in could not be verified" });
+  }
+
+  if (!profile?.sub || !profile.email || profile.email_verified !== true) {
+    return res.status(401).json({ message: "A verified Google email is required" });
+  }
+
+  try {
+    let user = await User.findOne({ googleId: profile.sub }).select("+googleId");
+    if (user) {
+      return sendAuthResponse(res, user);
+    }
+
+    user = await User.findOne({ email: profile.email.toLowerCase() }).select("+googleId");
+    if (user) {
+      if (user.googleId && user.googleId !== profile.sub) {
+        return res.status(409).json({ message: "This email is linked to another Google account" });
+      }
+      user.googleId = profile.sub;
+      await user.save();
+      return sendAuthResponse(res, user);
+    }
+
+    const username = `g-${crypto.randomBytes(12).toString("hex")}`;
+    user = await User.create({
+      name: profile.name?.trim().slice(0, 80) || profile.email,
+      username,
+      email: profile.email.toLowerCase(),
+      googleId: profile.sub,
+      role: "student",
+    });
+
+    return sendAuthResponse(res, user, 201);
+  } catch (error) {
+    if (error.code === 11000) {
+      const existingUser = await User.findOne({ googleId: profile.sub });
+      if (existingUser) return sendAuthResponse(res, existingUser);
+      return res.status(409).json({ message: "This Google account is already linked" });
+    }
+    console.error("Google sign-in failed:", error);
+    return res.status(500).json({ message: "Unable to sign in with Google right now" });
   }
 });
 

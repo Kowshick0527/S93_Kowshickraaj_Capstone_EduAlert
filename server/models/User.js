@@ -31,7 +31,14 @@ const userSchema = new mongoose.Schema(
 
     passwordHash: {
       type: String,
-      required: true,
+      required: false,
+      select: false,
+    },
+
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
       select: false,
     },
 
@@ -65,6 +72,7 @@ userSchema.virtual("performanceRecords", {
 });
 
 userSchema.methods.comparePassword = function (password) {
+  if (!this.passwordHash) return false;
   return bcrypt.compare(password, this.passwordHash);
 };
 

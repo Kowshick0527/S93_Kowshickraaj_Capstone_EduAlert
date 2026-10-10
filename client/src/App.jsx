@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import './App.css'
 
 const emptyForm = { name: '', email: '', username: '', password: '' }
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
 async function readResponse(response) {
   const body = await response.json().catch(() => ({}))
@@ -17,6 +18,26 @@ function App() {
   const [busy, setBusy] = useState(() => Boolean(sessionStorage.getItem('edualert-token')))
   const [showPassword, setShowPassword] = useState(false)
 
+  async function handleGoogleCredential(credential) {
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      })
+      const result = await readResponse(response)
+      sessionStorage.setItem('edualert-token', result.token)
+      setUser(result.user)
+      setForm(emptyForm)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   useEffect(() => {
     const token = sessionStorage.getItem('edualert-token')
     if (!token) return
@@ -26,6 +47,56 @@ function App() {
       .then(({ user: account }) => setUser(account))
       .catch(() => sessionStorage.removeItem('edualert-token'))
       .finally(() => setBusy(false))
+  }, [])
+
+  useEffect(() => {
+    if (!googleClientId) return
+
+    let active = true
+    const script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]')
+      || document.createElement('script')
+    const initializeGoogleButton = () => {
+      const googleIdentity = window.google?.accounts?.id
+      const button = document.getElementById('google-signin-button')
+      if (!active || !googleIdentity || !button) return
+
+      googleIdentity.initialize({
+        client_id: googleClientId,
+        callback: ({ credential }) => {
+          if (!active) return
+          if (credential) handleGoogleCredential(credential)
+          else setMessage('Google sign-in did not return a credential. Please try again.')
+        },
+      })
+      googleIdentity.renderButton(button, {
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        width: Math.floor(button.getBoundingClientRect().width),
+      })
+    }
+    const handleScriptError = () => {
+      if (active) setMessage('Google sign-in could not load. Please try again later.')
+    }
+
+    if (!window.google?.accounts?.id) {
+      if (!script.parentNode) {
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        document.head.appendChild(script)
+      }
+      script.addEventListener('load', initializeGoogleButton)
+      script.addEventListener('error', handleScriptError)
+    } else {
+      initializeGoogleButton()
+    }
+
+    return () => {
+      active = false
+      script.removeEventListener('load', initializeGoogleButton)
+      script.removeEventListener('error', handleScriptError)
+    }
   }, [])
 
   function updateField(event) {
@@ -151,6 +222,13 @@ function App() {
             {message && <p className="form-error" role="alert">{message}</p>}
             <button className="submit-button" disabled={busy} type="submit"><span>{busy ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}</span><span aria-hidden="true">&#8594;</span></button>
           </form>
+
+          <div className="google-signin-section">
+            <div className="auth-divider"><span>or continue with</span></div>
+            {googleClientId
+              ? <div id="google-signin-button" aria-label="Sign in with Google" />
+              : <p className="google-config-note">Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in.</p>}
+          </div>
 
           <p className="form-footnote">
             {mode === 'login' ? 'New to EduAlert?' : 'Already have an account?'}{' '}
