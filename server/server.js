@@ -2,16 +2,31 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const fs = require("fs/promises");
+const path = require("path");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 require("dotenv").config();
 
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
+const StudentFile = require("./models/StudentFile");
 const requireAuth = require("./middleware/requireAuth");
 
 const app = express();
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "7mb" }));
+
+const uploadDirectory = path.join(__dirname, "uploads");
+const maxUploadBytes = 5 * 1024 * 1024;
+const allowedFileTypes = new Map([
+  ["application/pdf", { extension: ".pdf", matches: (bytes) => bytes.subarray(0, 5).toString() === "%PDF-" }],
+  ["image/png", { extension: ".png", matches: (bytes) => bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) }],
+  ["image/jpeg", { extension: ".jpg", matches: (bytes) => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff }],
+]);
+
+function safeFile(file) {
+  return { id: file.id, name: file.name, contentType: file.contentType, size: file.size, createdAt: file.createdAt };
+}
 
 function safeUser(user) {
   return {
@@ -173,6 +188,67 @@ app.post("/api/auth/google", async (req, res) => {
 
 app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ user: safeUser(req.authUser) });
+});
+
+app.get("/api/files", requireAuth, async (req, res) => {
+  try {
+    const files = await StudentFile.find({ userId: req.authUser.id }).sort({ createdAt: -1 });
+    res.json({ files: files.map(safeFile) });
+  } catch (error) {
+    console.error("Unable to list files:", error);
+    res.status(500).json({ message: "Unable to load your files right now" });
+  }
+});
+
+app.post("/api/files", requireAuth, async (req, res) => {
+  const { name, contentType, data } = req.body || {};
+  const type = allowedFileTypes.get(contentType);
+  if (typeof name !== "string" || !name.trim() || name.length > 180 || !type || typeof data !== "string") {
+    return res.status(400).json({ message: "Choose a PDF, PNG, or JPEG file" });
+  }
+
+  const encoded = data.replace(/^data:[^,]*;base64,/, "");
+  if (!encoded || encoded.length > Math.ceil(maxUploadBytes / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    return res.status(400).json({ message: "Files must be 5 MB or smaller" });
+  }
+  const contents = Buffer.from(encoded, "base64");
+  if (!contents.length || contents.length > maxUploadBytes) {
+    return res.status(400).json({ message: "Files must be 5 MB or smaller" });
+  }
+  if (!type.matches(contents)) {
+    return res.status(400).json({ message: "The file contents do not match the selected file type" });
+  }
+
+  const storageName = `${crypto.randomUUID()}${type.extension}`;
+  try {
+    await fs.mkdir(uploadDirectory, { recursive: true });
+    await fs.writeFile(path.join(uploadDirectory, storageName), contents, { flag: "wx" });
+    const file = await StudentFile.create({
+      userId: req.authUser.id,
+      name: path.basename(name.trim()),
+      storageName,
+      contentType,
+      size: contents.length,
+    });
+    res.status(201).json({ file: safeFile(file) });
+  } catch (error) {
+    await fs.unlink(path.join(uploadDirectory, storageName)).catch(() => {});
+    console.error("Unable to save file:", error);
+    res.status(500).json({ message: "Unable to save your file right now" });
+  }
+});
+
+app.get("/api/files/:id/download", requireAuth, async (req, res) => {
+  try {
+    const file = await StudentFile.findOne({ _id: req.params.id, userId: req.authUser.id });
+    if (!file) return res.status(404).json({ message: "File not found" });
+    res.download(path.join(uploadDirectory, file.storageName), file.name, (error) => {
+      if (error && !res.headersSent) res.status(404).json({ message: "File is no longer available" });
+    });
+  } catch (error) {
+    console.error("Unable to download file:", error);
+    res.status(500).json({ message: "Unable to download your file right now" });
+  }
 });
 
 app.get("/api/users", requireAuth, async (req, res) => {

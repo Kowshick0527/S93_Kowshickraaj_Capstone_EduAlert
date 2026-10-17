@@ -17,6 +17,73 @@ function App() {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(() => Boolean(sessionStorage.getItem('edualert-token')))
   const [showPassword, setShowPassword] = useState(false)
+  const [files, setFiles] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [fileMessage, setFileMessage] = useState('')
+
+  useEffect(() => {
+    if (!user) return
+    const token = sessionStorage.getItem('edualert-token')
+    fetch('/api/files', { headers: { Authorization: `Bearer ${token}` } })
+      .then(readResponse)
+      .then(({ files: savedFiles }) => setFiles(savedFiles))
+      .catch((error) => setFileMessage(error.message))
+  }, [user])
+
+  async function handleFileUpload(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const file = form.elements.namedItem('student-file').files[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      setFileMessage('Choose a file that is 5 MB or smaller.')
+      return
+    }
+
+    setUploading(true)
+    setFileMessage('')
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let index = 0; index < bytes.length; index += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
+      }
+      const response = await fetch('/api/files', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionStorage.getItem('edualert-token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: file.name, contentType: file.type, data: btoa(binary) }),
+      })
+      const { file: savedFile } = await readResponse(response)
+      setFiles((current) => [savedFile, ...current])
+      form.reset()
+      setFileMessage('File uploaded successfully.')
+    } catch (error) {
+      setFileMessage(error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function downloadFile(file) {
+    setFileMessage('')
+    try {
+      const response = await fetch(`/api/files/${encodeURIComponent(file.id)}/download`, {
+        headers: { Authorization: `Bearer ${sessionStorage.getItem('edualert-token')}` },
+      })
+      if (!response.ok) await readResponse(response)
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = url
+      link.download = file.name
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setFileMessage(error.message)
+    }
+  }
 
   async function handleGoogleCredential(credential) {
     setBusy(true)
@@ -164,6 +231,31 @@ function App() {
             <div><dt>Email</dt><dd>{user.email}</dd></div>
             <div><dt>Account</dt><dd>{user.role}</dd></div>
           </dl>
+          <section className="file-section" aria-labelledby="files-title">
+            <div className="file-section-heading">
+              <div><p className="eyebrow">YOUR DOCUMENTS</p><h2 id="files-title">Keep files close</h2></div>
+              <span className="file-count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
+            </div>
+            <p className="file-intro">Upload academic documents for easy access later.</p>
+            <form className="upload-form" onSubmit={handleFileUpload}>
+              <label className="file-picker">
+                <span>Choose a document</span>
+                <input aria-label="Choose a document to upload" name="student-file" type="file" accept="application/pdf,image/png,image/jpeg" required />
+              </label>
+              <button className="upload-button" type="submit" disabled={uploading}>{uploading ? 'Uploading…' : 'Upload file'}</button>
+            </form>
+            <p className="file-hint">PDF, PNG, or JPEG · up to 5 MB</p>
+            {fileMessage && <p className="file-message" role="status">{fileMessage}</p>}
+            {files.length > 0
+              ? <ul className="file-list">{files.map((file) => (
+                <li key={file.id}>
+                  <span className="file-type" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</span>
+                  <span className="file-details"><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(0)} KB · {new Date(file.createdAt).toLocaleDateString()}</small></span>
+                  <button className="download-button" type="button" onClick={() => downloadFile(file)}>Download</button>
+                </li>
+              ))}</ul>
+              : <p className="empty-files">Your uploaded documents will appear here.</p>}
+          </section>
         </section>
       </main>
     )
