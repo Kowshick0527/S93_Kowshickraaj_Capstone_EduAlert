@@ -38,3 +38,7 @@ The design covers student and faculty dashboards, attendance and assessment moni
 Open the Vite URL shown in the client terminal. Users can create a student account with a name, email, username, and password, then sign in with their username and password or Google. Passwords are stored as bcrypt hashes. Google ID tokens are verified by the API before issuing the application's JWT. Authentication endpoints are `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/google`, and the bearer-token protected `GET /api/auth/me`.
 
 Mock UX Status: Completed and published.
+
+## Student document uploads
+
+After signing in, students can upload PDF, PNG, and JPEG documents up to 5 MB from their student space. Uploads are stored under `server/uploads` (excluded from Git), and each document's metadata is associated with its owner in MongoDB. The authenticated `GET /api/files` endpoint lists the current user's documents, while `GET /api/files/:id/download` serves only files owned by the signed-in user.
