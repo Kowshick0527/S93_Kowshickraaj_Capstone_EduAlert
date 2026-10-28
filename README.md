@@ -39,6 +39,20 @@ Open the Vite URL shown in the client terminal. Users can create a student accou
 
 Mock UX Status: Completed and published.
 
+## Backend deployment
+
+The EduAlert API is deployed on Render: [https://edualert-api.onrender.com](https://edualert-api.onrender.com). Its `GET /` health endpoint returns `{"message":"EduAlert API is running"}`.
+
+The Render web service is configured with `server/` as its root directory, `npm install` as its build command, and `npm start` as its start command. Render supplies the `PORT` environment variable at runtime.
+
+Set these values in the Render service's environment settings; do not commit them to the repository:
+
+- `MONGO_URI`: the connection string for the hosted MongoDB database.
+- `JWT_SECRET`: a private random secret of at least 32 characters.
+- `GOOGLE_CLIENT_ID` (optional): the Google OAuth client ID used to enable Google sign-in.
+
+The MongoDB deployment must allow connections from the Render service. Keep database credentials and all other secret values private.
+
 ## Student document uploads
 
 After signing in, students can upload PDF, PNG, and JPEG documents up to 5 MB from their student space. Uploads are stored under `server/uploads` (excluded from Git), and each document's metadata is associated with its owner in MongoDB. The authenticated `GET /api/files` endpoint lists the current user's documents, while `GET /api/files/:id/download` serves only files owned by the signed-in user.
