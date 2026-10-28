@@ -55,7 +55,7 @@ The MongoDB deployment must allow connections from the Render service. Keep data
 
 ## Frontend deployment
 
-The client is configured for Netlify using the repository-root `netlify.toml`: Netlify builds from `client/` with `npm run build` and publishes `dist/`. Requests under `/api/` are proxied to the deployed Render API, and other paths fall back to the client entry point.
+The client is deployed on Netlify at [https://cute-chebakia-cfbd91.netlify.app](https://cute-chebakia-cfbd91.netlify.app). The repository-root `netlify.toml` configures Netlify to build from `client/` with `npm run build` and publish `dist/`. Requests under `/api/` are proxied to the deployed Render API, and other paths fall back to the client entry point.
 
 To enable Google sign-in in the deployed client, set `VITE_GOOGLE_CLIENT_ID` in the Netlify site's build environment and add the Netlify site origin to the Google OAuth client's authorized JavaScript origins. Keep any OAuth client secret out of the frontend.
 
