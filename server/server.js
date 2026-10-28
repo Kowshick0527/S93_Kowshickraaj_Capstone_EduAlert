@@ -10,6 +10,7 @@ require("dotenv").config();
 
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
+const Performance = require("./models/Performance");
 const StudentFile = require("./models/StudentFile");
 const requireAuth = require("./middleware/requireAuth");
 
@@ -190,6 +191,56 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ user: safeUser(req.authUser) });
 });
 
+app.post("/api/ai/autocomplete", requireAuth, async (req, res) => {
+  const { text } = req.body || {};
+  if (typeof text !== "string" || !text.trim() || text.length > 2000) {
+    return res.status(400).json({ message: "Enter up to 2,000 characters for an AI continuation" });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(503).json({ message: "AI autocomplete is not configured" });
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Continue the student's brief academic reflection in a supportive, clear tone. Return only a short continuation, without repeating the text or adding claims about grades, attendance, or personal circumstances.",
+          },
+          { role: "user", content: text.trim() },
+        ],
+        max_tokens: 120,
+        temperature: 0.6,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.error("AI autocomplete provider returned status:", response.status);
+      return res.status(502).json({ message: "AI autocomplete is temporarily unavailable" });
+    }
+
+    const result = await response.json();
+    const completion = result.choices?.[0]?.message?.content;
+    if (typeof completion !== "string" || !completion.trim()) {
+      console.error("AI autocomplete provider returned an empty completion");
+      return res.status(502).json({ message: "AI autocomplete did not return a suggestion" });
+    }
+
+    return res.json({ completion: completion.trim() });
+  } catch (error) {
+    console.error("AI autocomplete request failed:", error.message);
+    return res.status(502).json({ message: "AI autocomplete is temporarily unavailable" });
+  }
+});
+
 app.get("/api/files", requireAuth, async (req, res) => {
   try {
     const files = await StudentFile.find({ userId: req.authUser.id }).sort({ createdAt: -1 });
@@ -287,12 +338,37 @@ app.put("/api/users/:id", requireAuth, async (req, res) => {
 });
 
 app.post("/api/attendance", requireAuth, async (req, res) => {
-  if (req.authUser.role !== "faculty" && req.body?.studentId !== req.authUser.id) {
+  const { subject, totalClasses, attendedClasses } = req.body || {};
+  const studentId = req.authUser.role === "faculty" ? req.body?.studentId : req.authUser.id;
+  if (req.authUser.role !== "faculty" && req.body?.studentId && req.body.studentId !== req.authUser.id) {
     return res.status(403).json({ message: "You can only add your own attendance" });
+  }
+  if (
+    typeof subject !== "string" ||
+    !subject.trim() ||
+    subject.trim().length > 100 ||
+    !Number.isInteger(totalClasses) ||
+    totalClasses < 1 ||
+    !Number.isInteger(attendedClasses) ||
+    attendedClasses < 0 ||
+    attendedClasses > totalClasses ||
+    (req.authUser.role === "faculty" && !mongoose.isValidObjectId(studentId))
+  ) {
+    return res.status(400).json({ message: "Enter a subject and valid attended/total class counts" });
   }
 
   try {
-    const attendance = await Attendance.create(req.body);
+    if (req.authUser.role === "faculty" && !(await User.exists({ _id: studentId, role: "student" }))) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const attendance = await Attendance.create({
+      studentId,
+      subject: subject.trim(),
+      totalClasses,
+      attendedClasses,
+      percentage: Math.round((attendedClasses / totalClasses) * 10000) / 100,
+    });
     res.status(201).json(attendance);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -301,7 +377,11 @@ app.post("/api/attendance", requireAuth, async (req, res) => {
 
 app.get("/api/attendance", requireAuth, async (req, res) => {
   try {
-    const filter = req.authUser.role === "faculty" ? {} : { studentId: req.authUser.id };
+    const filter = req.authUser.role === "faculty"
+      ? req.query.studentId
+        ? { studentId: req.query.studentId }
+        : {}
+      : { studentId: req.authUser.id };
     const attendance = await Attendance.find(filter);
     res.json(attendance);
   } catch (error) {
@@ -320,11 +400,133 @@ app.put("/api/attendance/:id", requireAuth, async (req, res) => {
       return res.status(403).json({ message: "You can only update your own attendance" });
     }
 
-    for (const field of ["subject", "totalClasses", "attendedClasses", "percentage"]) {
-      if (req.body?.[field] !== undefined) attendance[field] = req.body[field];
+    const subject = req.body?.subject ?? attendance.subject;
+    const totalClasses = req.body?.totalClasses ?? attendance.totalClasses;
+    const attendedClasses = req.body?.attendedClasses ?? attendance.attendedClasses;
+    if (
+      typeof subject !== "string" ||
+      !subject.trim() ||
+      subject.trim().length > 100 ||
+      !Number.isInteger(totalClasses) ||
+      totalClasses < 1 ||
+      !Number.isInteger(attendedClasses) ||
+      attendedClasses < 0 ||
+      attendedClasses > totalClasses
+    ) {
+      return res.status(400).json({ message: "Enter a subject and valid attended/total class counts" });
     }
+
+    attendance.subject = subject.trim();
+    attendance.totalClasses = totalClasses;
+    attendance.attendedClasses = attendedClasses;
+    attendance.percentage = Math.round((attendedClasses / totalClasses) * 10000) / 100;
     await attendance.save();
     res.json(attendance);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.post("/api/performance", requireAuth, async (req, res) => {
+  const { subject, assessment, category = "grade", marks, maxMarks } = req.body || {};
+  const studentId = req.authUser.role === "faculty" ? req.body?.studentId : req.authUser.id;
+  if (req.authUser.role !== "faculty" && req.body?.studentId && req.body.studentId !== req.authUser.id) {
+    return res.status(403).json({ message: "You can only add your own scores" });
+  }
+  if (
+    typeof subject !== "string" ||
+    !subject.trim() ||
+    subject.trim().length > 100 ||
+    typeof assessment !== "string" ||
+    !assessment.trim() ||
+    assessment.trim().length > 120 ||
+    !["grade", "project"].includes(category) ||
+    typeof marks !== "number" ||
+    !Number.isFinite(marks) ||
+    typeof maxMarks !== "number" ||
+    !Number.isFinite(maxMarks) ||
+    maxMarks <= 0 ||
+    marks < 0 ||
+    marks > maxMarks ||
+    (req.authUser.role === "faculty" && !mongoose.isValidObjectId(studentId))
+  ) {
+    return res.status(400).json({ message: "Enter a subject, assessment, valid score, and score category" });
+  }
+
+  try {
+    if (req.authUser.role === "faculty" && !(await User.exists({ _id: studentId, role: "student" }))) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    const performance = await Performance.create({
+      studentId,
+      subject: subject.trim(),
+      assessment: assessment.trim(),
+      category,
+      marks,
+      maxMarks,
+    });
+    res.status(201).json(performance);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.get("/api/performance", requireAuth, async (req, res) => {
+  try {
+    const filter = req.authUser.role === "faculty" && req.query.studentId
+      ? { studentId: req.query.studentId }
+      : req.authUser.role === "faculty"
+        ? {}
+        : { studentId: req.authUser.id };
+    const performance = await Performance.find(filter).sort({ createdAt: -1 });
+    res.json(performance);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.put("/api/performance/:id", requireAuth, async (req, res) => {
+  try {
+    const performance = await Performance.findById(req.params.id);
+    if (!performance) return res.status(404).json({ message: "Score record not found" });
+    if (
+      req.authUser.role !== "faculty" &&
+      performance.studentId.toString() !== req.authUser.id
+    ) {
+      return res.status(403).json({ message: "You can only update your own scores" });
+    }
+
+    const subject = req.body?.subject ?? performance.subject;
+    const assessment = req.body?.assessment ?? performance.assessment;
+    const category = req.body?.category ?? performance.category ?? "grade";
+    const marks = req.body?.marks ?? performance.marks;
+    const maxMarks = req.body?.maxMarks ?? performance.maxMarks;
+    if (
+      typeof subject !== "string" ||
+      !subject.trim() ||
+      subject.trim().length > 100 ||
+      typeof assessment !== "string" ||
+      !assessment.trim() ||
+      assessment.trim().length > 120 ||
+      !["grade", "project"].includes(category) ||
+      typeof marks !== "number" ||
+      !Number.isFinite(marks) ||
+      typeof maxMarks !== "number" ||
+      !Number.isFinite(maxMarks) ||
+      maxMarks <= 0 ||
+      marks < 0 ||
+      marks > maxMarks
+    ) {
+      return res.status(400).json({ message: "Enter a subject, assessment, valid score, and score category" });
+    }
+
+    performance.subject = subject.trim();
+    performance.assessment = assessment.trim();
+    performance.category = category;
+    performance.marks = marks;
+    performance.maxMarks = maxMarks;
+    await performance.save();
+    res.json(performance);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

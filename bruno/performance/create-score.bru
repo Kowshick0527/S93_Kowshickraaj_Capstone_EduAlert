@@ -1,0 +1,27 @@
+meta {
+  name: Create grade or project score
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/performance
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "studentId": "{{userId}}",
+    "subject": "Computing",
+    "assessment": "Team build",
+    "category": "project",
+    "marks": 42,
+    "maxMarks": 50
+  }
+}
