@@ -1,0 +1,15 @@
+meta {
+  name: List my files
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/files
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}

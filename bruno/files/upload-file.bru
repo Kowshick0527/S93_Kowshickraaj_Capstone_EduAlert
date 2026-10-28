@@ -1,0 +1,24 @@
+meta {
+  name: Upload a PDF
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/files
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "sample.pdf",
+    "contentType": "application/pdf",
+    "data": "JVBERi0xLjQK"
+  }
+}
