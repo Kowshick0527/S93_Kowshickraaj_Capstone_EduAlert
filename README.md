@@ -37,7 +37,37 @@ The design covers student and faculty dashboards, attendance and assessment moni
 
 Open the Vite URL shown in the client terminal. Users can create a student account with a name, email, username, and password, then sign in with their username and password or Google. Passwords are stored as bcrypt hashes. Google ID tokens are verified by the API before issuing the application's JWT. Authentication endpoints are `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/google`, and the bearer-token protected `GET /api/auth/me`.
 
+## Backend tests
+
+Run the API unit tests with:
+
+```powershell
+npm test --prefix server
+```
+
+The Jest/Supertest suite covers the health, registration, login, Google sign-in configuration, and protected profile routes without requiring a live MongoDB instance.
+
 Mock UX Status: Completed and published.
+
+## Backend deployment
+
+The EduAlert API is deployed on Render: [https://edualert-api.onrender.com](https://edualert-api.onrender.com). Its `GET /` health endpoint returns `{"message":"EduAlert API is running"}`.
+
+The Render web service is configured with `server/` as its root directory, `npm install` as its build command, and `npm start` as its start command. Render supplies the `PORT` environment variable at runtime.
+
+Set these values in the Render service's environment settings; do not commit them to the repository:
+
+- `MONGO_URI`: the connection string for the hosted MongoDB database.
+- `JWT_SECRET`: a private random secret of at least 32 characters.
+- `GOOGLE_CLIENT_ID` (optional): the Google OAuth client ID used to enable Google sign-in.
+
+The MongoDB deployment must allow connections from the Render service. Keep database credentials and all other secret values private.
+
+## Frontend deployment
+
+The client is deployed on Netlify at [https://cute-chebakia-cfbd91.netlify.app](https://cute-chebakia-cfbd91.netlify.app). The repository-root `netlify.toml` configures Netlify to build from `client/` with `npm run build` and publish `dist/`. Requests under `/api/` are proxied to the deployed Render API, and other paths fall back to the client entry point.
+
+To enable Google sign-in in the deployed client, set `VITE_GOOGLE_CLIENT_ID` in the Netlify site's build environment and add the Netlify site origin to the Google OAuth client's authorized JavaScript origins. Keep any OAuth client secret out of the frontend.
 
 ## Student document uploads
 
