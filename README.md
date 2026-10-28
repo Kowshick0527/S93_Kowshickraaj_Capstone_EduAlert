@@ -47,6 +47,22 @@ npm test --prefix server
 
 The Jest/Supertest suite covers the health, registration, login, Google sign-in configuration, and protected profile routes without requiring a live MongoDB instance.
 
+## Run with Docker
+
+The root `Dockerfile` builds the API image, and `client/Dockerfile` builds the static client image. Docker Compose starts both containers with a MongoDB container, persistent database and upload volumes, an Nginx `/api` proxy, and the SPA fallback.
+
+1. Copy `.env.docker.example` to `.env.docker` and replace `JWT_SECRET` with a private random value of at least 32 characters. Optionally set `GOOGLE_CLIENT_ID` to enable Google sign-in.
+2. From the repository root, build and start the services:
+
+   ```powershell
+   docker compose up --build
+   ```
+
+3. Open `http://localhost:8080`. The client and API are available through this address.
+4. Stop the containers with `Ctrl+C`, or run `docker compose down`. The MongoDB and uploaded-file volumes are retained.
+
+Do not commit `.env.docker`; it is excluded by `.gitignore`.
+
 Mock UX Status: Completed and published.
 
 ## Backend deployment
