@@ -53,6 +53,12 @@ Set these values in the Render service's environment settings; do not commit the
 
 The MongoDB deployment must allow connections from the Render service. Keep database credentials and all other secret values private.
 
+## Frontend deployment
+
+The client is configured for Netlify using the repository-root `netlify.toml`: Netlify builds from `client/` with `npm run build` and publishes `dist/`. Requests under `/api/` are proxied to the deployed Render API, and other paths fall back to the client entry point.
+
+To enable Google sign-in in the deployed client, set `VITE_GOOGLE_CLIENT_ID` in the Netlify site's build environment and add the Netlify site origin to the Google OAuth client's authorized JavaScript origins. Keep any OAuth client secret out of the frontend.
+
 ## Student document uploads
 
 After signing in, students can upload PDF, PNG, and JPEG documents up to 5 MB from their student space. Uploads are stored under `server/uploads` (excluded from Git), and each document's metadata is associated with its owner in MongoDB. The authenticated `GET /api/files` endpoint lists the current user's documents, while `GET /api/files/:id/download` serves only files owned by the signed-in user.
