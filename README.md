@@ -37,6 +37,16 @@ The design covers student and faculty dashboards, attendance and assessment moni
 
 Open the Vite URL shown in the client terminal. Users can create a student account with a name, email, username, and password, then sign in with their username and password or Google. Passwords are stored as bcrypt hashes. Google ID tokens are verified by the API before issuing the application's JWT. Authentication endpoints are `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/google`, and the bearer-token protected `GET /api/auth/me`.
 
+## Backend tests
+
+Run the API unit tests with:
+
+```powershell
+npm test --prefix server
+```
+
+The Jest/Supertest suite covers the health, registration, login, Google sign-in configuration, and protected profile routes without requiring a live MongoDB instance.
+
 Mock UX Status: Completed and published.
 
 ## Backend deployment
