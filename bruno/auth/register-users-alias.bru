@@ -1,0 +1,24 @@
+meta {
+  name: Register account (users alias)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Alex Student",
+    "username": "alex.student",
+    "email": "alex.student@example.com",
+    "password": "ChangeMe123!"
+  }
+}
