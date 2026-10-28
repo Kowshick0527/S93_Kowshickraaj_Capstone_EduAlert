@@ -57,6 +57,7 @@ function App() {
 
   useEffect(() => {
     if (!user || (user.role === 'faculty' && !selectedStudentId)) return
+    let active = true
     const token = sessionStorage.getItem('edualert-token')
     const query = user.role === 'faculty' ? `?studentId=${encodeURIComponent(selectedStudentId)}` : ''
     const headers = { Authorization: `Bearer ${token}` }
@@ -65,10 +66,14 @@ function App() {
       fetch(`/api/performance${query}`, { headers }).then(readResponse),
     ])
       .then(([attendance, performance]) => {
+        if (!active) return
         setAttendanceRecords(attendance)
         setPerformanceRecords(performance)
       })
-      .catch((error) => setAcademicMessage(error.message))
+      .catch((error) => {
+        if (active) setAcademicMessage(error.message)
+      })
+    return () => { active = false }
   }, [user, selectedStudentId])
 
   async function refreshAcademicRecords() {
@@ -376,7 +381,12 @@ function App() {
     const studentPicker = user.role === 'faculty' && (
       <label className="tracking-field">
         <span>Student</span>
-        <select required value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>
+        <select required value={selectedStudentId} onChange={(event) => {
+          setAcademicMessage('')
+          setAttendanceRecords([])
+          setPerformanceRecords([])
+          setSelectedStudentId(event.target.value)
+        }}>
           {!facultyStudents.length && <option value="">No students available</option>}
           {facultyStudents.map((student) => <option key={student.id} value={student.id}>{student.name} · @{student.username}</option>)}
         </select>
