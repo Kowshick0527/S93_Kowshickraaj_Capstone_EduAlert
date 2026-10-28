@@ -1,0 +1,26 @@
+meta {
+  name: Create attendance
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/attendance
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "studentId": "{{userId}}",
+    "subject": "Mathematics",
+    "totalClasses": 20,
+    "attendedClasses": 18,
+    "percentage": 90
+  }
+}

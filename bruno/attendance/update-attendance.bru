@@ -1,0 +1,24 @@
+meta {
+  name: Update attendance
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/attendance/{{attendanceId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "totalClasses": 21,
+    "attendedClasses": 19,
+    "percentage": 90.48
+  }
+}

@@ -1,0 +1,21 @@
+meta {
+  name: Google login
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/auth/google
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "credential": "{{googleCredential}}"
+  }
+}
