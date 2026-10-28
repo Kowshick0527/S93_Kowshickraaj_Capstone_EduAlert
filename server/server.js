@@ -10,6 +10,7 @@ require("dotenv").config();
 
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
+const Performance = require("./models/Performance");
 const StudentFile = require("./models/StudentFile");
 const requireAuth = require("./middleware/requireAuth");
 
@@ -337,12 +338,37 @@ app.put("/api/users/:id", requireAuth, async (req, res) => {
 });
 
 app.post("/api/attendance", requireAuth, async (req, res) => {
-  if (req.authUser.role !== "faculty" && req.body?.studentId !== req.authUser.id) {
+  const { subject, totalClasses, attendedClasses } = req.body || {};
+  const studentId = req.authUser.role === "faculty" ? req.body?.studentId : req.authUser.id;
+  if (req.authUser.role !== "faculty" && req.body?.studentId && req.body.studentId !== req.authUser.id) {
     return res.status(403).json({ message: "You can only add your own attendance" });
+  }
+  if (
+    typeof subject !== "string" ||
+    !subject.trim() ||
+    subject.trim().length > 100 ||
+    !Number.isInteger(totalClasses) ||
+    totalClasses < 1 ||
+    !Number.isInteger(attendedClasses) ||
+    attendedClasses < 0 ||
+    attendedClasses > totalClasses ||
+    (req.authUser.role === "faculty" && !mongoose.isValidObjectId(studentId))
+  ) {
+    return res.status(400).json({ message: "Enter a subject and valid attended/total class counts" });
   }
 
   try {
-    const attendance = await Attendance.create(req.body);
+    if (req.authUser.role === "faculty" && !(await User.exists({ _id: studentId, role: "student" }))) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const attendance = await Attendance.create({
+      studentId,
+      subject: subject.trim(),
+      totalClasses,
+      attendedClasses,
+      percentage: Math.round((attendedClasses / totalClasses) * 10000) / 100,
+    });
     res.status(201).json(attendance);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -351,7 +377,11 @@ app.post("/api/attendance", requireAuth, async (req, res) => {
 
 app.get("/api/attendance", requireAuth, async (req, res) => {
   try {
-    const filter = req.authUser.role === "faculty" ? {} : { studentId: req.authUser.id };
+    const filter = req.authUser.role === "faculty"
+      ? req.query.studentId
+        ? { studentId: req.query.studentId }
+        : {}
+      : { studentId: req.authUser.id };
     const attendance = await Attendance.find(filter);
     res.json(attendance);
   } catch (error) {
@@ -370,11 +400,133 @@ app.put("/api/attendance/:id", requireAuth, async (req, res) => {
       return res.status(403).json({ message: "You can only update your own attendance" });
     }
 
-    for (const field of ["subject", "totalClasses", "attendedClasses", "percentage"]) {
-      if (req.body?.[field] !== undefined) attendance[field] = req.body[field];
+    const subject = req.body?.subject ?? attendance.subject;
+    const totalClasses = req.body?.totalClasses ?? attendance.totalClasses;
+    const attendedClasses = req.body?.attendedClasses ?? attendance.attendedClasses;
+    if (
+      typeof subject !== "string" ||
+      !subject.trim() ||
+      subject.trim().length > 100 ||
+      !Number.isInteger(totalClasses) ||
+      totalClasses < 1 ||
+      !Number.isInteger(attendedClasses) ||
+      attendedClasses < 0 ||
+      attendedClasses > totalClasses
+    ) {
+      return res.status(400).json({ message: "Enter a subject and valid attended/total class counts" });
     }
+
+    attendance.subject = subject.trim();
+    attendance.totalClasses = totalClasses;
+    attendance.attendedClasses = attendedClasses;
+    attendance.percentage = Math.round((attendedClasses / totalClasses) * 10000) / 100;
     await attendance.save();
     res.json(attendance);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.post("/api/performance", requireAuth, async (req, res) => {
+  const { subject, assessment, category = "grade", marks, maxMarks } = req.body || {};
+  const studentId = req.authUser.role === "faculty" ? req.body?.studentId : req.authUser.id;
+  if (req.authUser.role !== "faculty" && req.body?.studentId && req.body.studentId !== req.authUser.id) {
+    return res.status(403).json({ message: "You can only add your own scores" });
+  }
+  if (
+    typeof subject !== "string" ||
+    !subject.trim() ||
+    subject.trim().length > 100 ||
+    typeof assessment !== "string" ||
+    !assessment.trim() ||
+    assessment.trim().length > 120 ||
+    !["grade", "project"].includes(category) ||
+    typeof marks !== "number" ||
+    !Number.isFinite(marks) ||
+    typeof maxMarks !== "number" ||
+    !Number.isFinite(maxMarks) ||
+    maxMarks <= 0 ||
+    marks < 0 ||
+    marks > maxMarks ||
+    (req.authUser.role === "faculty" && !mongoose.isValidObjectId(studentId))
+  ) {
+    return res.status(400).json({ message: "Enter a subject, assessment, valid score, and score category" });
+  }
+
+  try {
+    if (req.authUser.role === "faculty" && !(await User.exists({ _id: studentId, role: "student" }))) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    const performance = await Performance.create({
+      studentId,
+      subject: subject.trim(),
+      assessment: assessment.trim(),
+      category,
+      marks,
+      maxMarks,
+    });
+    res.status(201).json(performance);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.get("/api/performance", requireAuth, async (req, res) => {
+  try {
+    const filter = req.authUser.role === "faculty" && req.query.studentId
+      ? { studentId: req.query.studentId }
+      : req.authUser.role === "faculty"
+        ? {}
+        : { studentId: req.authUser.id };
+    const performance = await Performance.find(filter).sort({ createdAt: -1 });
+    res.json(performance);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.put("/api/performance/:id", requireAuth, async (req, res) => {
+  try {
+    const performance = await Performance.findById(req.params.id);
+    if (!performance) return res.status(404).json({ message: "Score record not found" });
+    if (
+      req.authUser.role !== "faculty" &&
+      performance.studentId.toString() !== req.authUser.id
+    ) {
+      return res.status(403).json({ message: "You can only update your own scores" });
+    }
+
+    const subject = req.body?.subject ?? performance.subject;
+    const assessment = req.body?.assessment ?? performance.assessment;
+    const category = req.body?.category ?? performance.category ?? "grade";
+    const marks = req.body?.marks ?? performance.marks;
+    const maxMarks = req.body?.maxMarks ?? performance.maxMarks;
+    if (
+      typeof subject !== "string" ||
+      !subject.trim() ||
+      subject.trim().length > 100 ||
+      typeof assessment !== "string" ||
+      !assessment.trim() ||
+      assessment.trim().length > 120 ||
+      !["grade", "project"].includes(category) ||
+      typeof marks !== "number" ||
+      !Number.isFinite(marks) ||
+      typeof maxMarks !== "number" ||
+      !Number.isFinite(maxMarks) ||
+      maxMarks <= 0 ||
+      marks < 0 ||
+      marks > maxMarks
+    ) {
+      return res.status(400).json({ message: "Enter a subject, assessment, valid score, and score category" });
+    }
+
+    performance.subject = subject.trim();
+    performance.assessment = assessment.trim();
+    performance.category = category;
+    performance.marks = marks;
+    performance.maxMarks = maxMarks;
+    await performance.save();
+    res.json(performance);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

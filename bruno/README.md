@@ -1,6 +1,6 @@
 # EduAlert API - Bruno collection
 
-This collection documents all 15 HTTP endpoints currently defined by `server/server.js`.
+This collection documents all 18 HTTP endpoints currently defined by `server/server.js`.
 
 ## Run locally
 
@@ -9,7 +9,7 @@ This collection documents all 15 HTTP endpoints currently defined by `server/ser
 3. Run **Register account** or **Register account (users alias)** with a unique email and username, then copy the returned `token` into the environment's `token` variable.
 4. For authenticated requests, use a student token. Faculty-only operations such as listing users require a faculty account/token.
 5. To test Google sign-in, replace `googleCredential` with a valid Google ID token for the configured OAuth client. The upload example sends a minimal PDF header; change `name`, `contentType`, and `data` together when testing PNG or JPEG files.
-6. Copy returned IDs into `userId`, `fileId`, or `attendanceId` before running the related requests. Use the response body for JSON endpoints and the downloaded response for the file download endpoint.
+6. Copy returned IDs into `userId`, `fileId`, `attendanceId`, or `performanceId` before running the related requests. Use the response body for JSON endpoints and the downloaded response for the file download endpoint.
 
 The collection uses only sample values and contains no credentials. Requests requiring authentication send `Authorization: Bearer {{token}}`.
 
@@ -32,3 +32,6 @@ The collection uses only sample values and contains no credentials. Requests req
 | POST | `/api/attendance` | Authenticated; own record or faculty |
 | GET | `/api/attendance` | Authenticated; own records or faculty |
 | PUT | `/api/attendance/:id` | Authenticated; own record or faculty |
+| POST | `/api/performance` | Authenticated; records a grade or project score |
+| GET | `/api/performance` | Authenticated; own scores or faculty |
+| PUT | `/api/performance/:id` | Authenticated; own score or faculty |

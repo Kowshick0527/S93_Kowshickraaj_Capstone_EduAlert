@@ -20,6 +20,14 @@ function App() {
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [fileMessage, setFileMessage] = useState('')
+  const [attendanceRecords, setAttendanceRecords] = useState([])
+  const [performanceRecords, setPerformanceRecords] = useState([])
+  const [academicMessage, setAcademicMessage] = useState('')
+  const [academicBusy, setAcademicBusy] = useState(false)
+  const [attendanceForm, setAttendanceForm] = useState({ subject: '', totalClasses: '', attendedClasses: '' })
+  const [scoreForm, setScoreForm] = useState({ subject: '', assessment: '', category: 'grade', marks: '', maxMarks: '' })
+  const [facultyStudents, setFacultyStudents] = useState([])
+  const [selectedStudentId, setSelectedStudentId] = useState('')
   const [reflection, setReflection] = useState('')
   const [completion, setCompletion] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
@@ -33,6 +41,103 @@ function App() {
       .then(({ files: savedFiles }) => setFiles(savedFiles))
       .catch((error) => setFileMessage(error.message))
   }, [user])
+
+  useEffect(() => {
+    if (!user || user.role !== 'faculty') return
+    const token = sessionStorage.getItem('edualert-token')
+    fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } })
+      .then(readResponse)
+      .then((users) => {
+        const students = users.filter((account) => account.role === 'student')
+        setFacultyStudents(students)
+        setSelectedStudentId(students[0]?.id || '')
+      })
+      .catch((error) => setAcademicMessage(error.message))
+  }, [user])
+
+  useEffect(() => {
+    if (!user || (user.role === 'faculty' && !selectedStudentId)) return
+    const token = sessionStorage.getItem('edualert-token')
+    const query = user.role === 'faculty' ? `?studentId=${encodeURIComponent(selectedStudentId)}` : ''
+    const headers = { Authorization: `Bearer ${token}` }
+    Promise.all([
+      fetch(`/api/attendance${query}`, { headers }).then(readResponse),
+      fetch(`/api/performance${query}`, { headers }).then(readResponse),
+    ])
+      .then(([attendance, performance]) => {
+        setAttendanceRecords(attendance)
+        setPerformanceRecords(performance)
+      })
+      .catch((error) => setAcademicMessage(error.message))
+  }, [user, selectedStudentId])
+
+  async function refreshAcademicRecords() {
+    const token = sessionStorage.getItem('edualert-token')
+    const query = user.role === 'faculty' ? `?studentId=${encodeURIComponent(selectedStudentId)}` : ''
+    const headers = { Authorization: `Bearer ${token}` }
+    const [attendance, performance] = await Promise.all([
+      fetch(`/api/attendance${query}`, { headers }).then(readResponse),
+      fetch(`/api/performance${query}`, { headers }).then(readResponse),
+    ])
+    setAttendanceRecords(attendance)
+    setPerformanceRecords(performance)
+  }
+
+  async function addAttendance(event) {
+    event.preventDefault()
+    setAcademicBusy(true)
+    setAcademicMessage('')
+    try {
+      const token = sessionStorage.getItem('edualert-token')
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: attendanceForm.subject,
+          totalClasses: Number(attendanceForm.totalClasses),
+          attendedClasses: Number(attendanceForm.attendedClasses),
+          ...(user.role === 'faculty' ? { studentId: selectedStudentId } : {}),
+        }),
+      })
+      await readResponse(response)
+      setAttendanceForm({ subject: '', totalClasses: '', attendedClasses: '' })
+      await refreshAcademicRecords()
+      setAcademicMessage('Attendance record saved.')
+    } catch (error) {
+      setAcademicMessage(error.message)
+    } finally {
+      setAcademicBusy(false)
+    }
+  }
+
+  async function addScore(event) {
+    event.preventDefault()
+    setAcademicBusy(true)
+    setAcademicMessage('')
+    try {
+      const token = sessionStorage.getItem('edualert-token')
+      const response = await fetch('/api/performance', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: scoreForm.subject,
+          assessment: scoreForm.assessment,
+          category: scoreForm.category,
+          marks: Number(scoreForm.marks),
+          maxMarks: Number(scoreForm.maxMarks),
+          ...(user.role === 'faculty' ? { studentId: selectedStudentId } : {}),
+        }),
+      })
+      await readResponse(response)
+      setScoreForm({ subject: '', assessment: '', category: 'grade', marks: '', maxMarks: '' })
+      await refreshAcademicRecords()
+      setAcademicMessage('Score saved.')
+    } catch (error) {
+      setAcademicMessage(error.message)
+    } finally {
+      setAcademicBusy(false)
+    }
+  }
 
   async function handleFileUpload(event) {
     event.preventDefault()
@@ -239,6 +344,10 @@ function App() {
     setUser(null)
     setForm(emptyForm)
     setMode('login')
+    setAttendanceRecords([])
+    setPerformanceRecords([])
+    setFacultyStudents([])
+    setSelectedStudentId('')
   }
 
   if (busy && !user && !form.username) {
@@ -246,84 +355,215 @@ function App() {
   }
 
   if (user) {
+    const grades = performanceRecords.filter((record) => (record.category || 'grade') === 'grade')
+    const projects = performanceRecords.filter((record) => record.category === 'project')
+    const attendanceBySubject = [...attendanceRecords.reduce((groups, record) => {
+      const current = groups.get(record.subject) || { subject: record.subject, totalClasses: 0, attendedClasses: 0 }
+      current.totalClasses += record.totalClasses
+      current.attendedClasses += record.attendedClasses
+      groups.set(record.subject, current)
+      return groups
+    }, new Map()).values()]
+    const totalClasses = attendanceRecords.reduce((sum, record) => sum + record.totalClasses, 0)
+    const attendedClasses = attendanceRecords.reduce((sum, record) => sum + record.attendedClasses, 0)
+    const attendanceRate = totalClasses ? `${((attendedClasses / totalClasses) * 100).toFixed(1)}%` : '—'
+    const scoreRate = (records) => {
+      const marks = records.reduce((sum, record) => sum + record.marks, 0)
+      const maxMarks = records.reduce((sum, record) => sum + record.maxMarks, 0)
+      return maxMarks ? `${((marks / maxMarks) * 100).toFixed(1)}%` : '—'
+    }
+    const scorePercentage = (record) => (record.maxMarks ? (record.marks / record.maxMarks) * 100 : 0)
+    const studentPicker = user.role === 'faculty' && (
+      <label className="tracking-field">
+        <span>Student</span>
+        <select required value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>
+          {!facultyStudents.length && <option value="">No students available</option>}
+          {facultyStudents.map((student) => <option key={student.id} value={student.id}>{student.name} · @{student.username}</option>)}
+        </select>
+      </label>
+    )
+
     return (
-      <main className="signed-in-shell">
+      <main className="signed-in-shell dashboard-shell">
         <header className="signed-in-header">
           <a className="brand" href="/" aria-label="EduAlert home"><span className="brand-mark">E</span><span>EduAlert</span></a>
-          <button className="text-button" type="button" onClick={signOut}>Sign out</button>
+          <div className="header-account">
+            <span>{user.name} <small>{user.role}</small></span>
+            <button className="text-button" type="button" onClick={signOut}>Sign out</button>
+          </div>
         </header>
-        <section className="welcome-panel" aria-labelledby="welcome-title">
-          <p className="eyebrow">YOUR STUDENT SPACE</p>
-          <div className="welcome-avatar" aria-hidden="true">{user.name.slice(0, 1).toUpperCase()}</div>
-          <h1 id="welcome-title">Welcome, {user.name.split(' ')[0]}.</h1>
-          <p className="welcome-copy">You are signed in and ready to continue.</p>
-          <dl className="account-details">
-            <div><dt>Username</dt><dd>@{user.username}</dd></div>
-            <div><dt>Email</dt><dd>{user.email}</dd></div>
-            <div><dt>Account</dt><dd>{user.role}</dd></div>
-          </dl>
-          <section className="ai-section" aria-labelledby="ai-title">
-            <div className="file-section-heading">
-              <div><p className="eyebrow">AI WRITING ASSISTANT</p><h2 id="ai-title">Continue your reflection</h2></div>
-              <span className="ai-badge" aria-hidden="true">AI</span>
+        <div className="dashboard-content">
+          <section className="dashboard-intro" aria-labelledby="welcome-title">
+            <div>
+              <p className="eyebrow">{user.role === 'faculty' ? 'FACULTY PROGRESS OVERVIEW' : 'STUDENT PROGRESS OVERVIEW'}</p>
+              <h1 id="welcome-title">Welcome, {user.name.split(' ')[0]}.</h1>
+              <p>{user.role === 'faculty' ? 'Review student attendance, grades, and project results.' : 'Track attendance, grades, and project results in one place.'}</p>
             </div>
-            <p className="file-intro">Start with a thought about your learning, and AI can suggest a short continuation.</p>
-            <label className="ai-field">
-              <span>Your reflection</span>
-              <textarea
-                aria-label="Your reflection"
-                maxLength={2000}
-                onChange={(event) => {
-                  setReflection(event.target.value)
-                  setCompletion('')
-                  setAiMessage('')
-                }}
-                placeholder="I feel more confident about my studies when..."
-                rows={4}
-                value={reflection}
-              />
-            </label>
-            <div className="ai-actions">
-              <button className="upload-button" type="button" onClick={continueReflection} disabled={aiBusy || !reflection.trim()}>
-                {aiBusy ? 'Thinking…' : 'Continue writing'}
-              </button>
-              <span className="ai-character-count">{reflection.length}/2,000</span>
-            </div>
-            <p className="ai-privacy-note">Your reflection is sent to the configured AI provider for a suggestion. Avoid including sensitive personal details.</p>
-            {aiMessage && <p className="file-message" role="alert">{aiMessage}</p>}
-            {completion && (
-              <div className="ai-suggestion" aria-live="polite">
-                <p>{completion}</p>
-                <button className="download-button" type="button" onClick={useCompletion}>Use continuation</button>
+            <div className="welcome-avatar" aria-hidden="true">{user.name.slice(0, 1).toUpperCase()}</div>
+          </section>
+
+          {academicMessage && <p className="tracking-message" role="status">{academicMessage}</p>}
+
+          <section className="metric-grid" aria-label="Academic progress summary">
+            <article className="metric-card metric-attendance">
+              <span className="metric-icon" aria-hidden="true">A</span>
+              <p>Attendance rate</p>
+              <strong>{attendanceRate}</strong>
+              <small>{attendedClasses} of {totalClasses} classes attended</small>
+            </article>
+            <article className="metric-card metric-grades">
+              <span className="metric-icon" aria-hidden="true">G</span>
+              <p>Grade average</p>
+              <strong>{scoreRate(grades)}</strong>
+              <small>{grades.length} {grades.length === 1 ? 'assessment' : 'assessments'} recorded</small>
+            </article>
+            <article className="metric-card metric-projects">
+              <span className="metric-icon" aria-hidden="true">P</span>
+              <p>Project average</p>
+              <strong>{scoreRate(projects)}</strong>
+              <small>{projects.length} {projects.length === 1 ? 'project' : 'projects'} recorded</small>
+            </article>
+          </section>
+
+          <section className="tracking-layout" aria-label="Academic records">
+            <div className="tracking-main">
+              <section className="tracking-panel" aria-labelledby="attendance-title">
+                <div className="tracking-heading">
+                  <div><p className="eyebrow">CLASS PARTICIPATION</p><h2 id="attendance-title">Attendance by subject</h2></div>
+                  <span className="record-count">{attendanceBySubject.length} {attendanceBySubject.length === 1 ? 'subject' : 'subjects'}</span>
+                </div>
+                {attendanceBySubject.length
+                  ? <ul className="attendance-list">{attendanceBySubject.map((record, index) => {
+                    const rate = record.totalClasses ? (record.attendedClasses / record.totalClasses) * 100 : 0
+                    return (
+                      <li key={record.id || record._id || `${record.subject}-${index}`}>
+                        <div className="attendance-record-heading">
+                          <strong>{record.subject}</strong>
+                          <span>{rate.toFixed(1)}%</span>
+                        </div>
+                        <div className="progress-track" role="progressbar" aria-label={`${record.subject} attendance`} aria-valuenow={Math.round(rate)} aria-valuemin="0" aria-valuemax="100">
+                          <span style={{ width: `${Math.min(rate, 100)}%` }} />
+                        </div>
+                        <small>{record.attendedClasses} attended out of {record.totalClasses} classes</small>
+                      </li>
+                    )
+                  })}</ul>
+                  : <p className="tracking-empty">No attendance records yet. Add your first subject to start tracking.</p>}
+              </section>
+
+              <div className="score-panels">
+                {[
+                  { title: 'Grades and assessments', label: 'COURSE PERFORMANCE', records: grades, empty: 'No grades recorded yet.' },
+                  { title: 'Project scores', label: 'PROJECT WORK', records: projects, empty: 'No project scores recorded yet.' },
+                ].map((group) => (
+                  <section className="tracking-panel score-panel" key={group.title}>
+                    <div className="tracking-heading">
+                      <div><p className="eyebrow">{group.label}</p><h2>{group.title}</h2></div>
+                      <span className="record-count">{group.records.length}</span>
+                    </div>
+                    {group.records.length
+                      ? <ul className="score-list">{group.records.map((record, index) => (
+                        <li key={record.id || record._id || `${record.assessment}-${index}`}>
+                          <div className="score-record-heading">
+                            <span><strong>{record.assessment}</strong><small>{record.subject}</small></span>
+                            <b>{record.marks}/{record.maxMarks}</b>
+                          </div>
+                          <div className="progress-track score-progress" role="progressbar" aria-label={`${record.assessment} score`} aria-valuenow={Math.round(scorePercentage(record))} aria-valuemin="0" aria-valuemax="100">
+                            <span style={{ width: `${Math.min(scorePercentage(record), 100)}%` }} />
+                          </div>
+                          <small>{scorePercentage(record).toFixed(1)}%</small>
+                        </li>
+                      ))}</ul>
+                      : <p className="tracking-empty">{group.empty}</p>}
+                  </section>
+                ))}
               </div>
-            )}
-          </section>
-          <section className="file-section" aria-labelledby="files-title">
-            <div className="file-section-heading">
-              <div><p className="eyebrow">YOUR DOCUMENTS</p><h2 id="files-title">Keep files close</h2></div>
-              <span className="file-count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
             </div>
-            <p className="file-intro">Upload academic documents for easy access later.</p>
-            <form className="upload-form" onSubmit={handleFileUpload}>
-              <label className="file-picker">
-                <span>Choose a document</span>
-                <input aria-label="Choose a document to upload" name="student-file" type="file" accept="application/pdf,image/png,image/jpeg" required />
-              </label>
-              <button className="upload-button" type="submit" disabled={uploading}>{uploading ? 'Uploading…' : 'Upload file'}</button>
-            </form>
-            <p className="file-hint">PDF, PNG, or JPEG · up to 5 MB</p>
-            {fileMessage && <p className="file-message" role="status">{fileMessage}</p>}
-            {files.length > 0
-              ? <ul className="file-list">{files.map((file) => (
-                <li key={file.id}>
-                  <span className="file-type" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</span>
-                  <span className="file-details"><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(0)} KB · {new Date(file.createdAt).toLocaleDateString()}</small></span>
-                  <button className="download-button" type="button" onClick={() => downloadFile(file)}>Download</button>
-                </li>
-              ))}</ul>
-              : <p className="empty-files">Your uploaded documents will appear here.</p>}
+
+            <aside className="tracking-sidebar" aria-label="Add academic records">
+              <section className="tracking-panel entry-panel">
+                <p className="eyebrow">KEEP YOUR RECORDS CURRENT</p>
+                <h2>Add attendance</h2>
+                <form className="tracking-form" onSubmit={addAttendance}>
+                  {studentPicker}
+                  <label className="tracking-field"><span>Subject</span><input maxLength="100" onChange={(event) => setAttendanceForm((current) => ({ ...current, subject: event.target.value }))} placeholder="e.g. Mathematics" required value={attendanceForm.subject} /></label>
+                  <div className="form-field-row">
+                    <label className="tracking-field"><span>Attended</span><input min="0" onChange={(event) => setAttendanceForm((current) => ({ ...current, attendedClasses: event.target.value }))} required type="number" value={attendanceForm.attendedClasses} /></label>
+                    <label className="tracking-field"><span>Total classes</span><input min="1" onChange={(event) => setAttendanceForm((current) => ({ ...current, totalClasses: event.target.value }))} required type="number" value={attendanceForm.totalClasses} /></label>
+                  </div>
+                  <button className="tracking-submit" type="submit" disabled={academicBusy || (user.role === 'faculty' && !selectedStudentId)}>{academicBusy ? 'Saving…' : 'Save attendance'}</button>
+                </form>
+              </section>
+
+              <section className="tracking-panel entry-panel">
+                <p className="eyebrow">ASSESSMENTS AND PROJECTS</p>
+                <h2>Add a score</h2>
+                <form className="tracking-form" onSubmit={addScore}>
+                  {studentPicker}
+                  <label className="tracking-field"><span>Record type</span><select value={scoreForm.category} onChange={(event) => setScoreForm((current) => ({ ...current, category: event.target.value }))}><option value="grade">Grade / assessment</option><option value="project">Project</option></select></label>
+                  <label className="tracking-field"><span>Subject</span><input maxLength="100" onChange={(event) => setScoreForm((current) => ({ ...current, subject: event.target.value }))} placeholder="e.g. Computing" required value={scoreForm.subject} /></label>
+                  <label className="tracking-field"><span>Assessment or project name</span><input maxLength="120" onChange={(event) => setScoreForm((current) => ({ ...current, assessment: event.target.value }))} placeholder="e.g. Midterm or Team build" required value={scoreForm.assessment} /></label>
+                  <div className="form-field-row">
+                    <label className="tracking-field"><span>Score</span><input min="0" onChange={(event) => setScoreForm((current) => ({ ...current, marks: event.target.value }))} required step="any" type="number" value={scoreForm.marks} /></label>
+                    <label className="tracking-field"><span>Out of</span><input min="0.01" onChange={(event) => setScoreForm((current) => ({ ...current, maxMarks: event.target.value }))} required step="any" type="number" value={scoreForm.maxMarks} /></label>
+                  </div>
+                  <button className="tracking-submit" type="submit" disabled={academicBusy || (user.role === 'faculty' && !selectedStudentId)}>{academicBusy ? 'Saving…' : 'Save score'}</button>
+                </form>
+              </section>
+            </aside>
           </section>
-        </section>
+
+          <details className="secondary-tools">
+            <summary>More tools and documents</summary>
+            <div className="secondary-tools-content">
+              <section className="ai-section" aria-labelledby="ai-title">
+                <div className="file-section-heading">
+                  <div><p className="eyebrow">AI WRITING ASSISTANT</p><h2 id="ai-title">Continue your reflection</h2></div>
+                  <span className="ai-badge" aria-hidden="true">AI</span>
+                </div>
+                <p className="file-intro">Start with a thought about your learning, and AI can suggest a short continuation.</p>
+                <label className="ai-field">
+                  <span>Your reflection</span>
+                  <textarea aria-label="Your reflection" maxLength={2000} onChange={(event) => {
+                    setReflection(event.target.value)
+                    setCompletion('')
+                    setAiMessage('')
+                  }} placeholder="I feel more confident about my studies when..." rows={4} value={reflection} />
+                </label>
+                <div className="ai-actions">
+                  <button className="upload-button" type="button" onClick={continueReflection} disabled={aiBusy || !reflection.trim()}>{aiBusy ? 'Thinking…' : 'Continue writing'}</button>
+                  <span className="ai-character-count">{reflection.length}/2,000</span>
+                </div>
+                <p className="ai-privacy-note">Your reflection is sent to the configured AI provider for a suggestion. Avoid including sensitive personal details.</p>
+                {aiMessage && <p className="file-message" role="alert">{aiMessage}</p>}
+                {completion && <div className="ai-suggestion" aria-live="polite"><p>{completion}</p><button className="download-button" type="button" onClick={useCompletion}>Use continuation</button></div>}
+              </section>
+              <section className="file-section" aria-labelledby="files-title">
+                <div className="file-section-heading">
+                  <div><p className="eyebrow">YOUR DOCUMENTS</p><h2 id="files-title">Keep files close</h2></div>
+                  <span className="file-count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
+                </div>
+                <p className="file-intro">Upload academic documents for easy access later.</p>
+                <form className="upload-form" onSubmit={handleFileUpload}>
+                  <label className="file-picker"><span>Choose a document</span><input aria-label="Choose a document to upload" name="student-file" type="file" accept="application/pdf,image/png,image/jpeg" required /></label>
+                  <button className="upload-button" type="submit" disabled={uploading}>{uploading ? 'Uploading…' : 'Upload file'}</button>
+                </form>
+                <p className="file-hint">PDF, PNG, or JPEG · up to 5 MB</p>
+                {fileMessage && <p className="file-message" role="status">{fileMessage}</p>}
+                {files.length
+                  ? <ul className="file-list">{files.map((file) => (
+                    <li key={file.id}>
+                      <span className="file-type" aria-hidden="true">{file.contentType === 'application/pdf' ? 'PDF' : 'IMG'}</span>
+                      <span className="file-details"><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(0)} KB · {new Date(file.createdAt).toLocaleDateString()}</small></span>
+                      <button className="download-button" type="button" onClick={() => downloadFile(file)}>Download</button>
+                    </li>
+                  ))}</ul>
+                  : <p className="empty-files">Your uploaded documents will appear here.</p>}
+              </section>
+            </div>
+          </details>
+          <p className="dashboard-footer">EduAlert · Supporting informed academic progress</p>
+        </div>
       </main>
     )
   }

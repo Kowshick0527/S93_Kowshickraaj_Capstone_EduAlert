@@ -1,0 +1,23 @@
+meta {
+  name: Update grade or project score
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/performance/{{performanceId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "marks": 45,
+    "maxMarks": 50
+  }
+}

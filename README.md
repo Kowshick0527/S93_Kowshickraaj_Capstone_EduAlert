@@ -1,20 +1,20 @@
 # EduAlert
 
-EduAlert is an early academic warning system that helps students and educators notice academic concerns and respond with timely support.
+EduAlert is an academic progress tracker focused on student attendance, course grades, and project scores. It gives students and educators a single place to record and review the signals that can reveal when a student needs support.
 
 ## Problem Statement
 
-Students may not recognize academic difficulties until they affect major assessments. Information and support can also be spread across different systems, making it harder to follow progress and take an early, constructive next step.
+Attendance, assessment results, and project performance are often tracked in separate places. Without a clear view of these measures together, students and educators may miss patterns of declining engagement or achievement until it is too late to respond constructively.
 
 ## Proposed Solution
 
-EduAlert provides a web application and API for student accounts, attendance records, and private document uploads. An optional AI writing assistant can suggest a continuation to a student's learning reflection. The application is designed to grow into a broader early-warning and intervention platform.
+EduAlert centers the student dashboard on attendance by subject, grade and assessment results, and project scores. Students can record and review their own progress; faculty accounts can select students and enter or review their records. The API validates score and attendance ranges and calculates attendance percentages from the class counts. Supporting tools such as document uploads and optional AI reflection autocomplete are secondary to the tracking workflow.
 
 ## Technology Stack
 
 - **Frontend:** React 19, Vite, JavaScript, and CSS
 - **Backend:** Node.js, Express 5, and JavaScript
-- **Database:** MongoDB with Mongoose
+- **Database:** MongoDB with Mongoose; attendance and performance records reference their student account
 - **Authentication:** JWT bearer tokens, bcrypt password hashing, and optional Google OAuth
 - **AI autocomplete:** Optional server-side OpenAI Chat Completions API integration
 - **Testing:** Jest and Supertest
@@ -29,7 +29,7 @@ Browser
   └── React single-page application (Netlify)
         └── /api requests
               └── Express REST API (Render)
-                    ├── MongoDB Atlas (accounts and attendance)
+                    ├── MongoDB Atlas (accounts, attendance, grades, and projects)
                     ├── Private uploaded files (API storage)
                     ├── Google token verification (optional)
                     └── OpenAI Chat Completions (optional)
@@ -41,13 +41,22 @@ In local development, Vite proxies API requests to the Express server. In produc
 
 - Student account registration, username/password sign-in, and protected profile access
 - Optional Google sign-in when an OAuth client ID is configured
+- Attendance dashboard with per-subject rates, attended/total counts, and calculated aggregate attendance
+- Grade/assessment and project score tracking with score/max, percentages, and category averages
+- Student-owned academic records and faculty workflows to select students and enter/review records
+- Server-side validation for attendance counts and score ranges, with owner/faculty authorization
 - Authenticated student document upload, listing, and download
-- Attendance record creation, retrieval, and updates with owner/faculty authorization checks
-- Faculty-only user listing and permitted account updates
-- Optional AI continuation suggestions for a student-written reflection, with a review-before-use workflow
+- Optional AI continuation suggestions for a student-written reflection, available as a secondary tool
 - Bruno examples for the documented REST endpoints
 - Jest/Supertest tests for API behavior
 - Docker Compose setup for the client, API, and local MongoDB
+
+### Academic tracking workflow
+
+1. Sign in to open the progress dashboard.
+2. Record attendance by subject using attended and total class counts; EduAlert calculates the percentage.
+3. Add a grade/assessment or a project score with its subject, name, earned marks, and maximum marks.
+4. Review the attendance rate, grade average, project average, and individual records. Faculty accounts can choose a student before entering records.
 
 ## Installation Instructions
 
@@ -123,9 +132,9 @@ npm run build --prefix client
 - **Backend health endpoint:** [https://edualert-api.onrender.com](https://edualert-api.onrender.com)
 - **API request examples:** the [`bruno/`](./bruno/) collection in this repository
 
-The frontend is configured to proxy `/api/*` requests to the Render API. The API requires a reachable MongoDB instance configured through Render's environment settings. Google sign-in and AI autocomplete each require their respective server/client configuration.
+The frontend is configured to proxy `/api/*` requests to the Render API. The API requires a reachable MongoDB instance configured through Render's environment settings. The public deployment reflects the last deployed revision; changes on the open submission branch are not live until merged and redeployed. Google sign-in and AI autocomplete each require their respective server/client configuration.
 
-The public frontend returned its application page during verification, the API health endpoint returned its running message, and a safe login request with invalid credentials returned `401` (the expected authentication result rather than a database connection error). Feature changes on this submission branch are not live until the branch is merged and the services are redeployed.
+The public frontend returned its application page during verification, the API health endpoint returned its running message, and a safe login request with invalid credentials returned `401` (the expected authentication result rather than a database connection error).
 
 ## Folder Structure
 
@@ -147,8 +156,8 @@ The public frontend returned its application page during verification, the API h
 
 ## Future Improvements
 
-- Expand the frontend into dedicated student and faculty progress dashboards.
-- Add trend-based early-warning indicators and faculty intervention workflows.
+- Add trend charts and configurable early-warning thresholds based on attendance, grades, and project results.
+- Add faculty intervention notes and follow-up tracking when students need support.
 - Add API rate limiting, structured monitoring, and operational alerts.
 - Add end-to-end coverage for deployed authentication and student workflows.
 - Configure and verify the optional AI provider in the deployed environment.
@@ -161,6 +170,9 @@ The public frontend returned its application page during verification, the API h
 
 - AI autocomplete is optional and returns a configuration error until `OPENAI_API_KEY` is set on the API server.
 - The AI autocomplete implementation on this branch is not available from the current public deployment until the branch is merged and redeployed.
+- Faculty accounts must be provisioned by an administrator; public account registration creates student accounts only.
 - Google sign-in requires OAuth client configuration and an authorized frontend origin.
 - Uploaded files use API-server storage in the current deployment; a durable object-storage service would be preferable for a production multi-instance deployment.
-- The public API health route confirms that the API process responds. Database-backed routes should also be checked when validating the live database connection.
+- Data entry is currently manual; EduAlert does not yet import class rosters, attendance registers, or scores from an institutional system.
+- Automated early-warning thresholds and intervention workflows are future improvements, not currently implemented.
+- Uploaded files use API-server storage in the current deployment; a durable object-storage service would be preferable for a production multi-instance deployment.

@@ -18,6 +18,13 @@ const performanceSchema = new mongoose.Schema(
       required: true,
     },
 
+    category: {
+      type: String,
+      enum: ["grade", "project"],
+      default: "grade",
+      required: true,
+    },
+
     marks: {
       type: Number,
       required: true,
