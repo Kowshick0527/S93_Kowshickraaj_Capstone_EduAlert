@@ -45,13 +45,13 @@ Run the API unit tests with:
 npm test --prefix server
 ```
 
-The Jest/Supertest suite covers the health, registration, login, Google sign-in configuration, and protected profile routes without requiring a live MongoDB instance.
+The Jest/Supertest suite covers the health, registration, login, Google sign-in configuration, protected profile, and AI autocomplete routes without requiring a live MongoDB instance.
 
 ## Run with Docker
 
 The root `Dockerfile` builds the API image, and `client/Dockerfile` builds the static client image. Docker Compose starts both containers with a MongoDB container, persistent database and upload volumes, an Nginx `/api` proxy, and the SPA fallback.
 
-1. Copy `.env.docker.example` to `.env.docker` and replace `JWT_SECRET` with a private random value of at least 32 characters. Optionally set `GOOGLE_CLIENT_ID` to enable Google sign-in.
+1. Copy `.env.docker.example` to `.env.docker` and replace `JWT_SECRET` with a private random value of at least 32 characters. Optionally set `GOOGLE_CLIENT_ID` to enable Google sign-in and `OPENAI_API_KEY` to enable AI autocomplete.
 2. From the repository root, build and start the services:
 
    ```powershell
@@ -76,8 +76,12 @@ Set these values in the Render service's environment settings; do not commit the
 - `MONGO_URI`: the connection string for the hosted MongoDB database.
 - `JWT_SECRET`: a private random secret of at least 32 characters.
 - `GOOGLE_CLIENT_ID` (optional): the Google OAuth client ID used to enable Google sign-in.
+- `OPENAI_API_KEY` (optional): a server-side OpenAI API key for the authenticated reflection autocomplete endpoint.
+- `OPENAI_MODEL` (optional): a model available to the configured API key; defaults to `gpt-4o-mini`.
 
 The MongoDB deployment must allow connections from the Render service. Keep database credentials and all other secret values private.
+
+The reflection autocomplete endpoint sends only the student's entered text to the configured AI provider. The provider key is never sent to or bundled with the frontend.
 
 ## Frontend deployment
 

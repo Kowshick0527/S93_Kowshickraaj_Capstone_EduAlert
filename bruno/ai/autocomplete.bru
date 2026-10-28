@@ -1,0 +1,22 @@
+meta {
+  name: Continue reflection
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/ai/autocomplete
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "text": "I am learning to ask questions when I need help."
+  }
+}

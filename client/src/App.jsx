@@ -20,6 +20,10 @@ function App() {
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [fileMessage, setFileMessage] = useState('')
+  const [reflection, setReflection] = useState('')
+  const [completion, setCompletion] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiMessage, setAiMessage] = useState('')
 
   useEffect(() => {
     if (!user) return
@@ -65,6 +69,33 @@ function App() {
     } finally {
       setUploading(false)
     }
+  }
+
+  async function continueReflection() {
+    setAiBusy(true)
+    setAiMessage('')
+    setCompletion('')
+    try {
+      const response = await fetch('/api/ai/autocomplete', {
+        method: 'POST',
+        headers: {
+          Authorization: `******'edualert-token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: reflection }),
+      })
+      const result = await readResponse(response)
+      setCompletion(result.completion)
+    } catch (error) {
+      setAiMessage(error.message)
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  function useCompletion() {
+    setReflection((current) => `${current}${current && !/\s$/.test(current) ? ' ' : ''}${completion}`)
+    setCompletion('')
   }
 
   async function downloadFile(file) {
@@ -231,6 +262,42 @@ function App() {
             <div><dt>Email</dt><dd>{user.email}</dd></div>
             <div><dt>Account</dt><dd>{user.role}</dd></div>
           </dl>
+          <section className="ai-section" aria-labelledby="ai-title">
+            <div className="file-section-heading">
+              <div><p className="eyebrow">AI WRITING ASSISTANT</p><h2 id="ai-title">Continue your reflection</h2></div>
+              <span className="ai-badge" aria-hidden="true">AI</span>
+            </div>
+            <p className="file-intro">Start with a thought about your learning, and AI can suggest a short continuation.</p>
+            <label className="ai-field">
+              <span>Your reflection</span>
+              <textarea
+                aria-label="Your reflection"
+                maxLength={2000}
+                onChange={(event) => {
+                  setReflection(event.target.value)
+                  setCompletion('')
+                  setAiMessage('')
+                }}
+                placeholder="I feel more confident about my studies when..."
+                rows={4}
+                value={reflection}
+              />
+            </label>
+            <div className="ai-actions">
+              <button className="upload-button" type="button" onClick={continueReflection} disabled={aiBusy || !reflection.trim()}>
+                {aiBusy ? 'Thinking…' : 'Continue writing'}
+              </button>
+              <span className="ai-character-count">{reflection.length}/2,000</span>
+            </div>
+            <p className="ai-privacy-note">Your reflection is sent to the configured AI provider for a suggestion. Avoid including sensitive personal details.</p>
+            {aiMessage && <p className="file-message" role="alert">{aiMessage}</p>}
+            {completion && (
+              <div className="ai-suggestion" aria-live="polite">
+                <p>{completion}</p>
+                <button className="download-button" type="button" onClick={useCompletion}>Use continuation</button>
+              </div>
+            )}
+          </section>
           <section className="file-section" aria-labelledby="files-title">
             <div className="file-section-heading">
               <div><p className="eyebrow">YOUR DOCUMENTS</p><h2 id="files-title">Keep files close</h2></div>

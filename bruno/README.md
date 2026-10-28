@@ -1,6 +1,6 @@
 # EduAlert API - Bruno collection
 
-This collection documents all 14 HTTP endpoints currently defined by `server/server.js`.
+This collection documents all 15 HTTP endpoints currently defined by `server/server.js`.
 
 ## Run locally
 
@@ -26,6 +26,7 @@ The collection uses only sample values and contains no credentials. Requests req
 | GET | `/api/files` | Authenticated; own files |
 | POST | `/api/files` | Authenticated; own files, PDF/PNG/JPEG up to 5 MB |
 | GET | `/api/files/:id/download` | Authenticated; own files |
+| POST | `/api/ai/autocomplete` | Authenticated; requires the server-side AI provider key |
 | GET | `/api/users` | Faculty |
 | PUT | `/api/users/:id` | Authenticated; own account or faculty |
 | POST | `/api/attendance` | Authenticated; own record or faculty |
