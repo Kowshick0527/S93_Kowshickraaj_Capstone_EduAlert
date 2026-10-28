@@ -1,0 +1,8 @@
+.git
+.env
+.env.docker
+**/node_modules
+**/dist
+**/coverage
+server/uploads
+npm-debug.log*
