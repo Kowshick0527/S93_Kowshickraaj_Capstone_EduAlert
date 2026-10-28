@@ -190,6 +190,56 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ user: safeUser(req.authUser) });
 });
 
+app.post("/api/ai/autocomplete", requireAuth, async (req, res) => {
+  const { text } = req.body || {};
+  if (typeof text !== "string" || !text.trim() || text.length > 2000) {
+    return res.status(400).json({ message: "Enter up to 2,000 characters for an AI continuation" });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(503).json({ message: "AI autocomplete is not configured" });
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Continue the student's brief academic reflection in a supportive, clear tone. Return only a short continuation, without repeating the text or adding claims about grades, attendance, or personal circumstances.",
+          },
+          { role: "user", content: text.trim() },
+        ],
+        max_tokens: 120,
+        temperature: 0.6,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.error("AI autocomplete provider returned status:", response.status);
+      return res.status(502).json({ message: "AI autocomplete is temporarily unavailable" });
+    }
+
+    const result = await response.json();
+    const completion = result.choices?.[0]?.message?.content;
+    if (typeof completion !== "string" || !completion.trim()) {
+      console.error("AI autocomplete provider returned an empty completion");
+      return res.status(502).json({ message: "AI autocomplete did not return a suggestion" });
+    }
+
+    return res.json({ completion: completion.trim() });
+  } catch (error) {
+    console.error("AI autocomplete request failed:", error.message);
+    return res.status(502).json({ message: "AI autocomplete is temporarily unavailable" });
+  }
+});
+
 app.get("/api/files", requireAuth, async (req, res) => {
   try {
     const files = await StudentFile.find({ userId: req.authUser.id }).sort({ createdAt: -1 });
